@@ -1,11 +1,10 @@
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
 from datetime import datetime
+from supabase import create_client, Client
 
 app = FastAPI()
 
@@ -17,47 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-
-def get_db_connection():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-
-
-def init_db():
-    if not DATABASE_URL:
-        print("DATABASE_URL no encontrada en las variables de entorno.")
-        return
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pagos_casillas (
-            clave TEXT PRIMARY KEY,
-            pagado BOOLEAN
-        );
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS historial_transacciones (
-            id SERIAL PRIMARY KEY,
-            persona TEXT,
-            fecha TEXT,
-            monto REAL,
-            meses_cubiertos TEXT,
-            anio INTEGER
-        );
-    """)
-
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-
-try:
-    init_db()
-except Exception as e:
-    print("Error al inicializar la BBDD:", e)
+supabase: Client = (
+    create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+)
 
 
 class CambioCasillaDetallado(BaseModel):
@@ -77,118 +41,99 @@ class NuevaTransaccion(BaseModel):
 
 @app.get("/")
 def home():
-    return {
-        "status": "ok",
-        "mensaje": "API del TFG con Supabase funcionando correctamente",
-    }
+    return {"status": "ok", "mensaje": "API con Supabase SDK activa"}
 
 
 @app.get("/pagos")
 def obtener_todos_los_pagos():
+    if not supabase:
+        return {"casillas": {}, "historial": []}
+
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        res_casillas = supabase.table("pagos_casillas").select("*").execute()
+        casillas = {row["clave"]: bool(row["pagado"]) for row in res_casillas.data}
 
-        cursor.execute("SELECT clave, pagado FROM pagos_casillas;")
-        rows_casillas = cursor.fetchall()
-        casillas = {row["clave"]: bool(row["pagado"]) for row in rows_casillas}
-
-        cursor.execute(
-            "SELECT id, persona, fecha, monto, meses_cubiertos, anio FROM historial_transacciones ORDER BY id DESC;"
+        res_historial = (
+            supabase.table("historial_transacciones")
+            .select("*")
+            .order("id", desc=True)
+            .execute()
         )
-        rows_historial = cursor.fetchall()
         historial = [
             {
                 "id": row["id"],
                 "persona": row["persona"],
                 "fecha": row["fecha"],
                 "monto": row["monto"],
-                "meses": row["meses_cubiertos"].split(","),
+                "meses": row["meses_cubiertos"].split(", "),
                 "anio": row["anio"],
             }
-            for row in rows_historial
+            for row in res_historial.data
         ]
 
-        cursor.close()
-        conn.close()
         return {"casillas": casillas, "historial": historial}
     except Exception as e:
-        print("Error en /pagos:", e)
+        print("Error al leer pagos:", e)
         return {"casillas": {}, "historial": []}
 
 
 @app.post("/toggle-casilla")
 def toggle_casilla(data: CambioCasillaDetallado):
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    if not supabase:
+        return {"status": "error", "message": "Supabase no configurado"}
 
+    try:
         clave = f"{data.anio}-{data.persona}-{data.mes}"
 
-        # 1. Guardar o actualizar la casilla
-        cursor.execute(
-            """
-            INSERT INTO pagos_casillas (clave, pagado)
-            VALUES (%s, %s)
-            ON CONFLICT (clave) 
-            DO UPDATE SET pagado = EXCLUDED.pagado;
-        """,
-            (clave, data.pagado),
-        )
+        supabase.table("pagos_casillas").upsert(
+            {"clave": clave, "pagado": data.pagado}
+        ).execute()
 
-        # 2. Registrar la línea en el historial
         fecha_hoy = datetime.now().strftime("%Y-%m-%d")
         monto = 3.50 if data.pagado else -3.50
         meses_str = data.mes if data.pagado else f"Cancelación {data.mes}"
 
-        cursor.execute(
-            """
-            INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
-            VALUES (%s, %s, %s, %s, %s);
-        """,
-            (data.persona, fecha_hoy, monto, meses_str, data.anio),
-        )
+        supabase.table("historial_transacciones").insert(
+            {
+                "persona": data.persona,
+                "fecha": fecha_hoy,
+                "monto": monto,
+                "meses_cubiertos": meses_str,
+                "anio": data.anio,
+            }
+        ).execute()
 
-        conn.commit()
-        cursor.close()
-        conn.close()
         return {"status": "ok"}
     except Exception as e:
-        print("Error en /toggle-casilla:", e)
+        print("Error en toggle-casilla:", e)
         return {"status": "error", "message": str(e)}
 
 
 @app.post("/registrar-pago")
 def registrar_pago(data: NuevaTransaccion):
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    if not supabase:
+        return {"status": "error", "message": "Supabase no configurado"}
 
+    try:
         meses_str = ", ".join(data.meses)
-        cursor.execute(
-            """
-            INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
-            VALUES (%s, %s, %s, %s, %s);
-        """,
-            (data.persona, data.fecha, data.monto, meses_str, data.anio),
-        )
+
+        supabase.table("historial_transacciones").insert(
+            {
+                "persona": data.persona,
+                "fecha": data.fecha,
+                "monto": data.monto,
+                "meses_cubiertos": meses_str,
+                "anio": data.anio,
+            }
+        ).execute()
 
         for mes in data.meses:
             clave = f"{data.anio}-{data.persona}-{mes}"
-            cursor.execute(
-                """
-                INSERT INTO pagos_casillas (clave, pagado)
-                VALUES (%s, %s)
-                ON CONFLICT (clave) 
-                DO UPDATE SET pagado = EXCLUDED.pagado;
-            """,
-                (clave, True),
-            )
+            supabase.table("pagos_casillas").upsert(
+                {"clave": clave, "pagado": True}
+            ).execute()
 
-        conn.commit()
-        cursor.close()
-        conn.close()
         return {"status": "ok"}
     except Exception as e:
-        print("Error en /registrar-pago:", e)
+        print("Error en registrar-pago:", e)
         return {"status": "error", "message": str(e)}
