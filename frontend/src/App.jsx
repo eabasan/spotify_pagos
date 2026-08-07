@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 function App() {
   const [anioSeleccionado, setAnioSeleccionado] = useState(2026)
@@ -12,6 +12,10 @@ function App() {
   const [montoForm, setMontoForm] = useState('7.00')
   const [mesesForm, setMesesForm] = useState(['Ago', 'Sep'])
   const [mostrarModal, setMostrarModal] = useState(false)
+
+  // Buffer para agrupar clics seguidos
+  const colaCambios = useRef([])
+  const timerAgrupacion = useRef(null)
 
   const BACKEND_URL = 'https://prueba-tfg.onrender.com'
 
@@ -34,17 +38,40 @@ function App() {
     cargarDatos()
   }, [])
 
+  // Procesar y enviar la lista de clics acumulados en 1.5 segundos
+  const procesarCola = () => {
+    if (colaCambios.current.length === 0) return
+
+    const cambios = [...colaCambios.current]
+    colaCambios.current = [] // Limpiar la cola
+
+    fetch(`${BACKEND_URL}/toggle-casillas-agrupadas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cambios })
+    }).then(() => {
+      cargarDatos() // Recargar historial de BBDD
+    })
+  }
+
   const togglePago = (anio, persona, mes) => {
     const clave = `${anio}-${persona}-${mes}`
     const nuevoEstado = !pagos[clave]
 
+    // Actualización inmediata en la pantalla
     setPagos(prev => ({ ...prev, [clave]: nuevoEstado }))
 
-    fetch(`${BACKEND_URL}/toggle-casilla`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clave, pagado: nuevoEstado })
-    })
+    // Añadir el cambio al buffer acumulativo
+    colaCambios.current.push({ anio, persona, mes, pagado: nuevoEstado })
+
+    // Reiniciar el temporizador de 1.5 segundos para esperar si hace más clics
+    if (timerAgrupacion.current) {
+      clearTimeout(timerAgrupacion.current)
+    }
+
+    timerAgrupacion.current = setTimeout(() => {
+      procesarCola()
+    }, 1500)
   }
 
   const guardarPagoDetallado = (e) => {
@@ -142,12 +169,10 @@ function App() {
             </button>
           </div>
 
-          {/* Contenedor con Scroll Horizontal Ajustado */}
           <div style={{ maxWidth: '100%', overflowX: 'auto', margin: '0 auto', borderRadius: '12px', border: '1px solid #282828' }}>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: '#181818' }}>
               <thead>
                 <tr>
-                  {/* Cabecera Fija */}
                   <th style={{
                     position: 'sticky',
                     left: 0,
@@ -173,7 +198,6 @@ function App() {
               <tbody>
                 {personas.map((persona, idx) => (
                   <tr key={persona}>
-                    {/* Celda de Nombre Fija al Deslizar */}
                     <td style={{
                       position: 'sticky',
                       left: 0,
@@ -223,18 +247,18 @@ function App() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {historial.map(item => (
-                <div key={item.id} style={{ backgroundColor: '#181818', padding: '15px', borderRadius: '10px', borderLeft: '4px solid #1ed760', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={item.id} style={{ backgroundColor: '#181818', padding: '15px', borderRadius: '10px', borderLeft: item.monto >= 0 ? '4px solid #1ed760' : '4px solid #e74c3c', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ color: '#ffffff', fontSize: '1.1rem' }}>{item.persona}</strong>
                     <div style={{ color: '#b3b3b3', fontSize: '0.85rem', marginTop: '4px' }}>
                       Fecha: {item.fecha} | Año: {item.anio}
                     </div>
-                    <div style={{ color: '#1ed760', fontSize: '0.9rem', marginTop: '4px' }}>
+                    <div style={{ color: item.monto >= 0 ? '#1ed760' : '#e74c3c', fontSize: '0.9rem', marginTop: '4px' }}>
                       Meses: {item.meses.join(', ')}
                     </div>
                   </div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#1ed760' }}>
-                    +{item.monto.toFixed(2).replace('.', ',')} €
+                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: item.monto >= 0 ? '#1ed760' : '#e74c3c' }}>
+                    {item.monto >= 0 ? `+${item.monto.toFixed(2).replace('.', ',')} €` : `${item.monto.toFixed(2).replace('.', ',')} €`}
                   </div>
                 </div>
               ))}
