@@ -18,13 +18,14 @@ function App() {
 
   return (
     <div style={{ padding: '20px', fontFamily: 'sans-serif', textAlign: 'center' }}>
-      <h1>Dashboard de Prueba TFG 🚀</h1>
+      <h1 style={{ color: '#4F46E5' }}>Panel de Control de Elena 📊</h1>
+      <p>Trabajo Fin de Grado - Universidad Pablo de Olavide</p>
 
       {cargando ? (
         <p>Cargando datos del servidor...</p>
       ) : (
-        <div style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '16px', display: 'inline-block' }}>
-          <h2>Estado del Sistema</h2>
+        <div style={{ border: '2px solid #4F46E5', borderRadius: '12px', padding: '20px', display: 'inline-block', backgroundColor: '#F9FAFB' }}>
+          <h2>Resumen Ejecutivo</h2>
           <p><strong>Usuarios Activos:</strong> {datos.usuarios_activos}</p>
           <p><strong>Rendimiento:</strong> {datos.rendimiento}</p>
           <p><strong>Estado:</strong> {datos.estado_sistema}</p>
