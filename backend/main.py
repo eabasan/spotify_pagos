@@ -60,15 +60,9 @@ except Exception as e:
     print("Error al inicializar la BBDD:", e)
 
 
-class ItemCambio(BaseModel):
-    anio: int
-    persona: str
-    mes: str
+class CambioCasilla(BaseModel):
+    clave: str
     pagado: bool
-
-
-class LoteCambios(BaseModel):
-    cambios: List[ItemCambio]
 
 
 class NuevaTransaccion(BaseModel):
@@ -109,55 +103,39 @@ def obtener_todos_los_pagos():
     return {"casillas": casillas, "historial": historial}
 
 
-@app.post("/toggle-casillas-agrupadas")
-def toggle_casillas_agrupadas(data: LoteCambios):
-    if not data.cambios:
-        return {"status": "ok"}
-
+@app.post("/toggle-casilla")
+def toggle_casilla(data: CambioCasilla):
     conn = get_db_connection()
     cursor = conn.cursor()
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
-    # Agrupar cambios por persona, año y tipo (si es Pago +3.5€ o Cancelación -3.5€)
-    agrupados = {}
+    # 1. Actualizar casilla en BBDD
+    cursor.execute(
+        """
+        INSERT INTO pagos_casillas (clave, pagado)
+        VALUES (%s, %s)
+        ON CONFLICT (clave) 
+        DO UPDATE SET pagado = EXCLUDED.pagado;
+    """,
+        (data.clave, data.pagado),
+    )
 
-    for item in data.cambios:
-        clave = f"{item.anio}-{item.persona}-{item.mes}"
+    # 2. Registrar en el historial
+    partes = data.clave.split("-")
+    if len(partes) == 3:
+        anio = int(partes[0])
+        persona = partes[1]
+        mes = partes[2]
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
 
-        # 1. Guardar/actualizar casilla
-        cursor.execute(
-            """
-            INSERT INTO pagos_casillas (clave, pagado)
-            VALUES (%s, %s)
-            ON CONFLICT (clave) 
-            DO UPDATE SET pagado = EXCLUDED.pagado;
-        """,
-            (clave, item.pagado),
-        )
-
-        # 2. Agrupar para el historial
-        tipo = "pago" if item.pagado else "cancelacion"
-        grupo_key = (item.persona, item.anio, tipo)
-
-        if grupo_key not in agrupados:
-            agrupados[grupo_key] = []
-        agrupados[grupo_key].append(item.mes)
-
-    # 3. Crear registros del historial consolidados
-    for (persona, anio, tipo), lista_meses in agrupados.items():
-        if tipo == "pago":
-            monto_total = len(lista_meses) * 3.50
-            meses_str = ", ".join(lista_meses)
-        else:
-            monto_total = len(lista_meses) * -3.50
-            meses_str = "Cancelación: " + ", ".join(lista_meses)
+        monto = 3.50 if data.pagado else -3.50
+        meses_str = mes if data.pagado else f"Cancelación {mes}"
 
         cursor.execute(
             """
             INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
             VALUES (%s, %s, %s, %s, %s);
         """,
-            (persona, fecha_hoy, monto_total, meses_str, anio),
+            (persona, fecha_hoy, monto, meses_str, anio),
         )
 
     conn.commit()

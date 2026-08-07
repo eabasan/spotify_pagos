@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 
 function App() {
   const [anioSeleccionado, setAnioSeleccionado] = useState(2026)
@@ -8,14 +8,10 @@ function App() {
   const [cargando, setCargando] = useState(true)
 
   const [personaForm, setPersonaForm] = useState('Elena')
-  const [fechaForm, setFechaForm] = useState('2026-08-20')
+  const [fechaForm, setFechaForm] = useState('2026-08-07')
   const [montoForm, setMontoForm] = useState('7.00')
   const [mesesForm, setMesesForm] = useState(['Ago', 'Sep'])
   const [mostrarModal, setMostrarModal] = useState(false)
-
-  // Buffer para agrupar clics seguidos
-  const colaCambios = useRef([])
-  const timerAgrupacion = useRef(null)
 
   const BACKEND_URL = 'https://prueba-tfg.onrender.com'
 
@@ -38,40 +34,21 @@ function App() {
     cargarDatos()
   }, [])
 
-  // Procesar y enviar la lista de clics acumulados en 1.5 segundos
-  const procesarCola = () => {
-    if (colaCambios.current.length === 0) return
-
-    const cambios = [...colaCambios.current]
-    colaCambios.current = [] // Limpiar la cola
-
-    fetch(`${BACKEND_URL}/toggle-casillas-agrupadas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cambios })
-    }).then(() => {
-      cargarDatos() // Recargar historial de BBDD
-    })
-  }
-
   const togglePago = (anio, persona, mes) => {
     const clave = `${anio}-${persona}-${mes}`
     const nuevoEstado = !pagos[clave]
 
-    // Actualización inmediata en la pantalla
+    // Actualización inmediata en pantalla
     setPagos(prev => ({ ...prev, [clave]: nuevoEstado }))
 
-    // Añadir el cambio al buffer acumulativo
-    colaCambios.current.push({ anio, persona, mes, pagado: nuevoEstado })
-
-    // Reiniciar el temporizador de 1.5 segundos para esperar si hace más clics
-    if (timerAgrupacion.current) {
-      clearTimeout(timerAgrupacion.current)
-    }
-
-    timerAgrupacion.current = setTimeout(() => {
-      procesarCola()
-    }, 1500)
+    // Guardado inmediato en Supabase
+    fetch(`${BACKEND_URL}/toggle-casilla`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clave, pagado: nuevoEstado })
+    }).then(() => {
+      cargarDatos() // Recargar datos para sincronizar historial
+    })
   }
 
   const guardarPagoDetallado = (e) => {
