@@ -7,7 +7,7 @@ function App() {
 
   useEffect(() => {
     // Reemplaza 'localhost' por la IP de tu PC cuando pruebes desde la tablet
-    fetch('http://192.168.1.239:8000/kpis')
+    fetch('https://prueba-tfg.onrender.com/kpis')
       .then((respuesta) => respuesta.json())
       .then((data) => {
         setDatos(data)
