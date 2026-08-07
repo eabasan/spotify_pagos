@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react'
 
 function App() {
   const [anioSeleccionado, setAnioSeleccionado] = useState(2026)
-  const [vista, setVista] = useState('tabla') // 'tabla' o 'historial'
+  const [vista, setVista] = useState('tabla')
   const [pagos, setPagos] = useState({})
   const [historial, setHistorial] = useState([])
   const [cargando, setCargando] = useState(true)
 
-  // Formulario de pago detallado
   const [personaForm, setPersonaForm] = useState('Elena')
   const [fechaForm, setFechaForm] = useState('2026-08-20')
   const [montoForm, setMontoForm] = useState('7.00')
@@ -20,7 +19,6 @@ function App() {
   const personas = ['Luis', 'Angela', 'Elena', 'Claudia', 'Alejandro']
   const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-  // Cargar datos desde la Base de Datos al entrar
   const cargarDatos = () => {
     fetch(`${BACKEND_URL}/pagos`)
       .then(res => res.json())
@@ -36,7 +34,6 @@ function App() {
     cargarDatos()
   }, [])
 
-  // Guardar un clic simple en casilla
   const togglePago = (anio, persona, mes) => {
     const clave = `${anio}-${persona}-${mes}`
     const nuevoEstado = !pagos[clave]
@@ -50,7 +47,6 @@ function App() {
     })
   }
 
-  // Guardar un pago detallado (Fecha + Varios Meses)
   const guardarPagoDetallado = (e) => {
     e.preventDefault()
     const payload = {
@@ -67,7 +63,7 @@ function App() {
       body: JSON.stringify(payload)
     }).then(() => {
       setMostrarModal(false)
-      cargarDatos() // Recargar tabla e historial
+      cargarDatos()
     })
   }
 
@@ -90,13 +86,13 @@ function App() {
   }
 
   return (
-    <div style={{ backgroundColor: '#121212', color: '#ffffff', minHeight: '100vh', padding: '20px 10px', fontFamily: 'sans-serif' }}>
+    <div style={{ backgroundColor: '#121212', color: '#ffffff', minHeight: '100vh', padding: '20px 10px', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
       <header style={{ textAlign: 'center', marginBottom: '20px' }}>
         <h1 style={{ color: '#1ed760', fontSize: '2rem', marginBottom: '5px' }}>Control de Pagos BBDD 💳</h1>
-        <p style={{ color: '#b3b3b3', margin: 0 }}>Base de Datos compartida en tiempo real</p>
+        <p style={{ color: '#b3b3b3', margin: 0 }}>Base de Datos en Supabase</p>
       </header>
 
-      {/* Botones de Navegación de Vista */}
+      {/* Botones de Navegación */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '20px' }}>
         <button
           onClick={() => setVista('tabla')}
@@ -116,16 +112,15 @@ function App() {
             border: 'none', padding: '8px 16px', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer'
           }}
         >
-          📜 Historial de Registros
+          📜 Historial
         </button>
       </div>
 
       {cargando ? (
-        <div style={{ textAlign: 'center', color: '#1ed760', marginTop: '40px' }}>Conectando a la Base de Datos...</div>
+        <div style={{ textAlign: 'center', color: '#1ed760', marginTop: '40px' }}>Cargando datos desde Supabase...</div>
       ) : vista === 'tabla' ? (
         <>
-          {/* Selector de Año y Botón Añadir Pago Detallado */}
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
             {anos.map(anio => (
               <button
                 key={anio}
@@ -143,32 +138,59 @@ function App() {
               onClick={() => setMostrarModal(true)}
               style={{ backgroundColor: '#ffffff', color: '#121212', border: 'none', padding: '8px 14px', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}
             >
-              ➕ Añadir Pago Específico
+              ➕ Registrar Pago
             </button>
           </div>
 
-          {/* Tabla de Pagos */}
-          <div style={{ maxWidth: '1000px', margin: '0 auto', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: '#181818', borderRadius: '12px', overflow: 'hidden' }}>
+          {/* Contenedor con Scroll Horizontal Ajustado */}
+          <div style={{ maxWidth: '100%', overflowX: 'auto', margin: '0 auto', borderRadius: '12px', border: '1px solid #282828' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: '#181818' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, backgroundColor: '#181818', zIndex: 2, padding: '12px', textAlign: 'left', color: '#b3b3b3' }}>Persona</th>
+                  {/* Cabecera Fija */}
+                  <th style={{
+                    position: 'sticky',
+                    left: 0,
+                    backgroundColor: '#181818',
+                    zIndex: 3,
+                    padding: '12px',
+                    textAlign: 'left',
+                    color: '#b3b3b3',
+                    borderBottom: '2px solid #282828',
+                    boxShadow: '2px 0 5px rgba(0,0,0,0.5)',
+                    minWidth: '100px'
+                  }}>
+                    Persona
+                  </th>
                   {meses.map(mes => (
-                    <th key={mes} style={{ padding: '12px 8px', color: '#b3b3b3', textAlign: 'center' }}>{mes}</th>
+                    <th key={mes} style={{ padding: '12px 10px', color: '#b3b3b3', textAlign: 'center', borderBottom: '2px solid #282828', minWidth: '45px' }}>
+                      {mes}
+                    </th>
                   ))}
-                  <th style={{ padding: '12px', color: '#1ed760', textAlign: 'center' }}>Total</th>
+                  <th style={{ padding: '12px', color: '#1ed760', textAlign: 'center', borderBottom: '2px solid #282828', minWidth: '70px' }}>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {personas.map((persona, idx) => (
                   <tr key={persona}>
-                    <td style={{ position: 'sticky', left: 0, backgroundColor: '#181818', zIndex: 1, padding: '12px', fontWeight: 'bold', borderBottom: '1px solid #282828' }}>
+                    {/* Celda de Nombre Fija al Deslizar */}
+                    <td style={{
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: '#181818',
+                      zIndex: 2,
+                      padding: '12px',
+                      fontWeight: 'bold',
+                      color: '#ffffff',
+                      borderBottom: idx !== personas.length - 1 ? '1px solid #282828' : 'none',
+                      boxShadow: '2px 0 5px rgba(0,0,0,0.5)'
+                    }}>
                       {persona}
                     </td>
                     {meses.map(mes => {
                       const pagado = pagos[`${anioSeleccionado}-${persona}-${mes}`]
                       return (
-                        <td key={mes} style={{ padding: '8px', textAlign: 'center', borderBottom: '1px solid #282828' }}>
+                        <td key={mes} style={{ padding: '8px', textAlign: 'center', borderBottom: idx !== personas.length - 1 ? '1px solid #282828' : 'none' }}>
                           <button
                             onClick={() => togglePago(anioSeleccionado, persona, mes)}
                             style={{
@@ -184,7 +206,7 @@ function App() {
                         </td>
                       )
                     })}
-                    <td style={{ padding: '12px', fontWeight: 'bold', color: '#1ed760', textAlign: 'center', borderBottom: '1px solid #282828' }}>
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: '#1ed760', textAlign: 'center', borderBottom: idx !== personas.length - 1 ? '1px solid #282828' : 'none' }}>
                       {calcularTotalEuros(anioSeleccionado, persona)}
                     </td>
                   </tr>
@@ -194,7 +216,6 @@ function App() {
           </div>
         </>
       ) : (
-        /* Vista de Historial de Pagos Registrados */
         <div style={{ maxWidth: '700px', margin: '0 auto' }}>
           <h2 style={{ color: '#ffffff', textAlign: 'center', marginBottom: '20px' }}>Historial de Transacciones</h2>
           {historial.length === 0 ? (
@@ -206,7 +227,7 @@ function App() {
                   <div>
                     <strong style={{ color: '#ffffff', fontSize: '1.1rem' }}>{item.persona}</strong>
                     <div style={{ color: '#b3b3b3', fontSize: '0.85rem', marginTop: '4px' }}>
-                      Fecha de Pago: {item.fecha} | Año: {item.anio}
+                      Fecha: {item.fecha} | Año: {item.anio}
                     </div>
                     <div style={{ color: '#1ed760', fontSize: '0.9rem', marginTop: '4px' }}>
                       Meses: {item.meses.join(', ')}
@@ -222,7 +243,7 @@ function App() {
         </div>
       )}
 
-      {/* Modal / Pop-up para registrar pago detallado */}
+      {/* Modal / Formulario */}
       {mostrarModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}>
           <div style={{ backgroundColor: '#181818', padding: '25px', borderRadius: '15px', width: '90%', maxWidth: '400px', border: '1px solid #282828' }}>
