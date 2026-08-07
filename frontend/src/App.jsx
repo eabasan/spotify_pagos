@@ -27,7 +27,10 @@ function App() {
         setHistorial(data.historial || [])
         setCargando(false)
       })
-      .catch(err => console.error("Error al conectar con BBDD:", err))
+      .catch(err => {
+        console.error("Error al conectar con BBDD:", err)
+        setCargando(false)
+      })
   }
 
   useEffect(() => {
@@ -38,10 +41,10 @@ function App() {
     const clave = `${anio}-${persona}-${mes}`
     const nuevoEstado = !pagos[clave]
 
-    // Actualización visual inmediata
+    // Cambio visual inmediato en React
     setPagos(prev => ({ ...prev, [clave]: nuevoEstado }))
 
-    // Guardado en Supabase + Historial
+    // Envío seguro a FastAPI / Supabase
     fetch(`${BACKEND_URL}/toggle-casilla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,9 +54,16 @@ function App() {
         mes: mes,
         pagado: nuevoEstado
       })
-    }).then(() => {
-      cargarDatos() // Sincroniza el Historial de inmediato
     })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'ok') {
+          cargarDatos() // Actualizar el Historial solo si el servidor respondió bien
+        } else {
+          console.error("Error en servidor:", data.message)
+        }
+      })
+      .catch(err => console.error("Error de red:", err))
   }
 
   const guardarPagoDetallado = (e) => {
@@ -70,10 +80,12 @@ function App() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }).then(() => {
-      setMostrarModal(false)
-      cargarDatos()
     })
+      .then(res => res.json())
+      .then(() => {
+        setMostrarModal(false)
+        cargarDatos()
+      })
   }
 
   const toggleSeleccionMesForm = (mes) => {
@@ -101,7 +113,7 @@ function App() {
         <p style={{ color: '#b3b3b3', margin: 0 }}>Base de Datos en Supabase</p>
       </header>
 
-      {/* Botones de Navegación */}
+      {/* Navegación de Vistas */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '20px' }}>
         <button
           onClick={() => setVista('tabla')}

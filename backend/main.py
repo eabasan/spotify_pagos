@@ -26,7 +26,7 @@ def get_db_connection():
 
 def init_db():
     if not DATABASE_URL:
-        print("DATABASE_URL no encontrada.")
+        print("DATABASE_URL no encontrada en las variables de entorno.")
         return
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -75,95 +75,57 @@ class NuevaTransaccion(BaseModel):
     anio: int
 
 
+@app.get("/")
+def home():
+    return {
+        "status": "ok",
+        "mensaje": "API del TFG con Supabase funcionando correctamente",
+    }
+
+
 @app.get("/pagos")
 def obtener_todos_los_pagos():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT clave, pagado FROM pagos_casillas;")
-    rows_casillas = cursor.fetchall()
-    casillas = {row["clave"]: bool(row["pagado"]) for row in rows_casillas}
+        cursor.execute("SELECT clave, pagado FROM pagos_casillas;")
+        rows_casillas = cursor.fetchall()
+        casillas = {row["clave"]: bool(row["pagado"]) for row in rows_casillas}
 
-    cursor.execute(
-        "SELECT id, persona, fecha, monto, meses_cubiertos, anio FROM historial_transacciones ORDER BY id DESC;"
-    )
-    rows_historial = cursor.fetchall()
-    historial = [
-        {
-            "id": row["id"],
-            "persona": row["persona"],
-            "fecha": row["fecha"],
-            "monto": row["monto"],
-            "meses": row["meses_cubiertos"].split(","),
-            "anio": row["anio"],
-        }
-        for row in rows_historial
-    ]
+        cursor.execute(
+            "SELECT id, persona, fecha, monto, meses_cubiertos, anio FROM historial_transacciones ORDER BY id DESC;"
+        )
+        rows_historial = cursor.fetchall()
+        historial = [
+            {
+                "id": row["id"],
+                "persona": row["persona"],
+                "fecha": row["fecha"],
+                "monto": row["monto"],
+                "meses": row["meses_cubiertos"].split(","),
+                "anio": row["anio"],
+            }
+            for row in rows_historial
+        ]
 
-    cursor.close()
-    conn.close()
-    return {"casillas": casillas, "historial": historial}
+        cursor.close()
+        conn.close()
+        return {"casillas": casillas, "historial": historial}
+    except Exception as e:
+        print("Error en /pagos:", e)
+        return {"casillas": {}, "historial": []}
 
 
 @app.post("/toggle-casilla")
 def toggle_casilla(data: CambioCasillaDetallado):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    clave = f"{data.anio}-{data.persona}-{data.mes}"
+        clave = f"{data.anio}-{data.persona}-{data.mes}"
 
-    # 1. Guardar estado de la casilla
-    cursor.execute(
-        """
-        INSERT INTO pagos_casillas (clave, pagado)
-        VALUES (%s, %s)
-        ON CONFLICT (clave) 
-        DO UPDATE SET pagado = EXCLUDED.pagado;
-    """,
-        (clave, data.pagado),
-    )
-
-    # 2. Guardar en el historial siempre
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-    monto = 3.50 if data.pagado else -3.50
-    meses_str = data.mes if data.pagado else f"Cancelación {data.mes}"
-
-    cursor.execute(
-        """
-        INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
-        VALUES (%s, %s, %s, %s, %s);
-    """,
-        (data.persona, fecha_hoy, monto, meses_str, data.anio),
-    )
-
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return {"status": "ok"}
-
-
-@app.post("/registrar-pago")
-def registrar_pago(data: NuevaTransaccion):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    meses_str = ", ".join(data.meses)
-    cursor.execute(
-        """
-        INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
-        VALUES (%s, %s, %s, %s, %s);
-    """,
-        (
-            data.persona,
-            fecha_hoy if False else data.fecha,
-            data.monto,
-            meses_str,
-            data.anio,
-        ),
-    )
-
-    for mes in data.meses:
-        clave = f"{data.anio}-{data.persona}-{mes}"
+        # 1. Guardar o actualizar la casilla
         cursor.execute(
             """
             INSERT INTO pagos_casillas (clave, pagado)
@@ -171,10 +133,62 @@ def registrar_pago(data: NuevaTransaccion):
             ON CONFLICT (clave) 
             DO UPDATE SET pagado = EXCLUDED.pagado;
         """,
-            (clave, True),
+            (clave, data.pagado),
         )
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return {"status": "ok"}
+        # 2. Registrar la línea en el historial
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        monto = 3.50 if data.pagado else -3.50
+        meses_str = data.mes if data.pagado else f"Cancelación {data.mes}"
+
+        cursor.execute(
+            """
+            INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
+            VALUES (%s, %s, %s, %s, %s);
+        """,
+            (data.persona, fecha_hoy, monto, meses_str, data.anio),
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "ok"}
+    except Exception as e:
+        print("Error en /toggle-casilla:", e)
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/registrar-pago")
+def registrar_pago(data: NuevaTransaccion):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        meses_str = ", ".join(data.meses)
+        cursor.execute(
+            """
+            INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
+            VALUES (%s, %s, %s, %s, %s);
+        """,
+            (data.persona, data.fecha, data.monto, meses_str, data.anio),
+        )
+
+        for mes in data.meses:
+            clave = f"{data.anio}-{data.persona}-{mes}"
+            cursor.execute(
+                """
+                INSERT INTO pagos_casillas (clave, pagado)
+                VALUES (%s, %s)
+                ON CONFLICT (clave) 
+                DO UPDATE SET pagado = EXCLUDED.pagado;
+            """,
+                (clave, True),
+            )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "ok"}
+    except Exception as e:
+        print("Error en /registrar-pago:", e)
+        return {"status": "error", "message": str(e)}
