@@ -60,8 +60,10 @@ except Exception as e:
     print("Error al inicializar la BBDD:", e)
 
 
-class CambioCasilla(BaseModel):
-    clave: str
+class CambioCasillaDetallado(BaseModel):
+    anio: int
+    persona: str
+    mes: str
     pagado: bool
 
 
@@ -104,11 +106,13 @@ def obtener_todos_los_pagos():
 
 
 @app.post("/toggle-casilla")
-def toggle_casilla(data: CambioCasilla):
+def toggle_casilla(data: CambioCasillaDetallado):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Actualizar casilla en BBDD
+    clave = f"{data.anio}-{data.persona}-{data.mes}"
+
+    # 1. Guardar estado de la casilla
     cursor.execute(
         """
         INSERT INTO pagos_casillas (clave, pagado)
@@ -116,27 +120,21 @@ def toggle_casilla(data: CambioCasilla):
         ON CONFLICT (clave) 
         DO UPDATE SET pagado = EXCLUDED.pagado;
     """,
-        (data.clave, data.pagado),
+        (clave, data.pagado),
     )
 
-    # 2. Registrar en el historial
-    partes = data.clave.split("-")
-    if len(partes) == 3:
-        anio = int(partes[0])
-        persona = partes[1]
-        mes = partes[2]
-        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    # 2. Guardar en el historial siempre
+    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+    monto = 3.50 if data.pagado else -3.50
+    meses_str = data.mes if data.pagado else f"Cancelación {data.mes}"
 
-        monto = 3.50 if data.pagado else -3.50
-        meses_str = mes if data.pagado else f"Cancelación {mes}"
-
-        cursor.execute(
-            """
-            INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
-            VALUES (%s, %s, %s, %s, %s);
-        """,
-            (persona, fecha_hoy, monto, meses_str, anio),
-        )
+    cursor.execute(
+        """
+        INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
+        VALUES (%s, %s, %s, %s, %s);
+    """,
+        (data.persona, fecha_hoy, monto, meses_str, data.anio),
+    )
 
     conn.commit()
     cursor.close()
@@ -155,7 +153,13 @@ def registrar_pago(data: NuevaTransaccion):
         INSERT INTO historial_transacciones (persona, fecha, monto, meses_cubiertos, anio)
         VALUES (%s, %s, %s, %s, %s);
     """,
-        (data.persona, data.fecha, data.monto, meses_str, data.anio),
+        (
+            data.persona,
+            fecha_hoy if False else data.fecha,
+            data.monto,
+            meses_str,
+            data.anio,
+        ),
     )
 
     for mes in data.meses:

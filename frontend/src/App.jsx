@@ -38,16 +38,21 @@ function App() {
     const clave = `${anio}-${persona}-${mes}`
     const nuevoEstado = !pagos[clave]
 
-    // Actualización inmediata en pantalla
+    // Actualización visual inmediata
     setPagos(prev => ({ ...prev, [clave]: nuevoEstado }))
 
-    // Guardado inmediato en Supabase
+    // Guardado en Supabase + Historial
     fetch(`${BACKEND_URL}/toggle-casilla`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clave, pagado: nuevoEstado })
+      body: JSON.stringify({
+        anio: parseInt(anio),
+        persona: persona,
+        mes: mes,
+        pagado: nuevoEstado
+      })
     }).then(() => {
-      cargarDatos() // Recargar datos para sincronizar historial
+      cargarDatos() // Sincroniza el Historial de inmediato
     })
   }
 
