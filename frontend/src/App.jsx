@@ -61,67 +61,6 @@ function App() {
     cargarDatos()
   }, [])
 
-  // --- FUNCIÓN PARA MIGRAR TODOS LOS DATOS DE SUPABASE (CASILLAS + HISTORIAL) ---
-  const importarDatosSupabase = async () => {
-    if (!window.confirm('¿Quieres importar todos los pagos e historial de Supabase a Firebase?')) return
-    setCargando(true)
-
-    // 1. Todas las casillas que estaban en TRUE en Supabase
-    const casillasTrue = [
-      '2026-Alejandro-Ago',
-      '2026-Alejandro-Jul',
-      '2026-Alejandro-Oct',
-      '2026-Alejandro-Sep',
-      '2026-Angela-Ago',
-      '2026-Angela-Jul',
-      '2026-Claudia-Ago',
-      '2026-Claudia-Jul',
-      '2026-Claudia-Sep',
-      '2026-Elena-Ago',
-      '2026-Elena-Dic',
-      '2026-Elena-Jul',
-      '2026-Elena-Nov',
-      '2026-Elena-Oct',
-      '2026-Elena-Sep'
-    ]
-
-    // 2. Historial de transacciones de los pagos
-    const transaccionesIniciales = [
-      { persona: 'Alejandro', anio: 2026, fecha: '2026-07-01', monto: 14.00, meses: ['Jul', 'Ago', 'Sep', 'Oct'] },
-      { persona: 'Angela', anio: 2026, fecha: '2026-07-01', monto: 7.00, meses: ['Jul', 'Ago'] },
-      { persona: 'Claudia', anio: 2026, fecha: '2026-07-01', monto: 10.50, meses: ['Jul', 'Ago', 'Sep'] },
-      { persona: 'Elena', anio: 2026, fecha: '2026-07-01', monto: 21.00, meses: ['Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'] }
-    ]
-
-    try {
-      // Guardar casillas en Firebase
-      for (const clave of casillasTrue) {
-        const [anio, persona, mes] = clave.split('-')
-        await setDoc(doc(db, 'pagos_casillas', clave), {
-          pagado: true,
-          anio: parseInt(anio),
-          persona: persona,
-          mes: mes
-        })
-      }
-
-      // Guardar historial en Firebase
-      for (const tx of transaccionesIniciales) {
-        await addDoc(collection(db, 'historial_transacciones'), {
-          ...tx,
-          creadoEl: new Date().toISOString()
-        })
-      }
-
-      alert('¡Importación completada con éxito!')
-      await cargarDatos()
-    } catch (error) {
-      console.error('Error importando:', error)
-      alert('Error en la importación: ' + error.message)
-    } finally {
-      setCargando(false)
-    }
-  }
 
   // Marcar / desmarcar casilla directamente en Firestore
   const togglePago = async (anio, persona, mes) => {
@@ -251,12 +190,7 @@ function App() {
             >
               ➕ Registrar Pago
             </button>
-            <button
-              onClick={importarDatosSupabase}
-              style={{ backgroundColor: '#f59e0b', color: '#121212', border: 'none', padding: '8px 14px', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              ⚡ Importar de Supabase
-            </button>
+            
           </div>
 
           <div style={{ maxWidth: '100%', overflowX: 'auto', margin: '0 auto', borderRadius: '12px', border: '1px solid #282828' }}>
