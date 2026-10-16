@@ -1,4 +1,14 @@
 import { useState, useEffect } from 'react'
+import { db } from './firebase'
+import {
+  collection,
+  getDocs,
+  setDoc,
+  addDoc,
+  doc,
+  query,
+  orderBy
+} from 'firebase/firestore'
 
 function App() {
   const [anioSeleccionado, setAnioSeleccionado] = useState(2026)
@@ -13,79 +23,103 @@ function App() {
   const [mesesForm, setMesesForm] = useState(['Ago', 'Sep'])
   const [mostrarModal, setMostrarModal] = useState(false)
 
-  const BACKEND_URL = 'https://prueba-tfg.onrender.com'
-
   const anos = [2026, 2027, 2028, 2029, 2030]
   const personas = ['Luis', 'Angela', 'Elena', 'Claudia', 'Alejandro']
   const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
-  const cargarDatos = () => {
-    fetch(`${BACKEND_URL}/pagos`)
-      .then(res => res.json())
-      .then(data => {
-        setPagos(data.casillas || {})
-        setHistorial(data.historial || [])
-        setCargando(false)
+  // Carga de datos directa desde Firestore
+  const cargarDatos = async () => {
+    try {
+      // 1. Cargar estado de las casillas de pago
+      const snapPagos = await getDocs(collection(db, 'pagos_casillas'))
+      const mapaPagos = {}
+      snapPagos.forEach(docSnap => {
+        const data = docSnap.data()
+        mapaPagos[docSnap.id] = data.pagado
       })
-      .catch(err => {
-        console.error("Error al conectar con BBDD:", err)
-        setCargando(false)
-      })
+      setPagos(mapaPagos)
+
+      // 2. Cargar historial de transacciones ordenado por fecha
+      let listaHistorial = []
+      try {
+        const q = query(collection(db, 'historial_transacciones'), orderBy('fecha', 'desc'))
+        const snapHistorial = await getDocs(q)
+        listaHistorial = snapHistorial.docs.map(d => ({ id: d.id, ...d.data() }))
+      } catch (e) {
+        // Fallback por si los documentos aún no tienen índice o difieren en formato
+        const snapHistorial = await getDocs(collection(db, 'historial_transacciones'))
+        listaHistorial = snapHistorial.docs.map(d => ({ id: d.id, ...d.data() }))
+      }
+      setHistorial(listaHistorial)
+    } catch (err) {
+      console.error("Error al conectar con Firestore:", err)
+    } finally {
+      setCargando(false)
+    }
   }
 
   useEffect(() => {
     cargarDatos()
   }, [])
 
-  const togglePago = (anio, persona, mes) => {
+  // Marcar / desmarcar casilla directamente en Firestore
+  const togglePago = async (anio, persona, mes) => {
     const clave = `${anio}-${persona}-${mes}`
     const nuevoEstado = !pagos[clave]
 
-    // Cambio visual inmediato en React
+    // Actualización visual inmediata en React
     setPagos(prev => ({ ...prev, [clave]: nuevoEstado }))
 
-    // Envío seguro a FastAPI / Supabase
-    fetch(`${BACKEND_URL}/toggle-casilla`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    try {
+      // Guarda o actualiza el documento en Firestore
+      await setDoc(doc(db, 'pagos_casillas', clave), {
+        pagado: nuevoEstado,
         anio: parseInt(anio),
         persona: persona,
-        mes: mes,
-        pagado: nuevoEstado
+        mes: mes
       })
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.status === 'ok') {
-          cargarDatos() // Actualizar el Historial solo si el servidor respondió bien
-        } else {
-          console.error("Error en servidor:", data.message)
-        }
-      })
-      .catch(err => console.error("Error de red:", err))
+    } catch (err) {
+      console.error("Error al actualizar casilla en Firestore:", err)
+      // Revertir en la interfaz si falla la escritura
+      setPagos(prev => ({ ...prev, [clave]: !nuevoEstado }))
+    }
   }
 
-  const guardarPagoDetallado = (e) => {
+  // Guardar un pago detallado y marcar automáticamente sus casillas
+  const guardarPagoDetallado = async (e) => {
     e.preventDefault()
+    setCargando(true)
+
     const payload = {
       persona: personaForm,
       fecha: fechaForm,
       monto: parseFloat(montoForm),
       meses: mesesForm,
-      anio: anioSeleccionado
+      anio: anioSeleccionado,
+      creadoEl: new Date().toISOString()
     }
 
-    fetch(`${BACKEND_URL}/registrar-pago`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(res => res.json())
-      .then(() => {
-        setMostrarModal(false)
-        cargarDatos()
-      })
+    try {
+      // 1. Guardar la transacción en el historial
+      await addDoc(collection(db, 'historial_transacciones'), payload)
+
+      // 2. Marcar cada mes como pagado en la colección de casillas
+      for (const m of mesesForm) {
+        const clave = `${anioSeleccionado}-${personaForm}-${m}`
+        await setDoc(doc(db, 'pagos_casillas', clave), {
+          pagado: true,
+          anio: parseInt(anioSeleccionado),
+          persona: personaForm,
+          mes: m
+        })
+      }
+
+      setMostrarModal(false)
+      await cargarDatos()
+    } catch (err) {
+      console.error("Error al guardar pago en Firestore:", err)
+      setCargando(false)
+    }
   }
 
   const toggleSeleccionMesForm = (mes) => {
@@ -109,8 +143,8 @@ function App() {
   return (
     <div style={{ backgroundColor: '#121212', color: '#ffffff', minHeight: '100vh', padding: '20px 10px', fontFamily: 'sans-serif', boxSizing: 'border-box' }}>
       <header style={{ textAlign: 'center', marginBottom: '20px' }}>
-        <h1 style={{ color: '#1ed760', fontSize: '2rem', marginBottom: '5px' }}>Control de Pagos BBDD 💳</h1>
-        <p style={{ color: '#b3b3b3', margin: 0 }}>Base de Datos en Supabase</p>
+        <h1 style={{ color: '#1ed760', fontSize: '2rem', marginBottom: '5px' }}>Control de Pagos Spotify 💳</h1>
+        <p style={{ color: '#b3b3b3', margin: 0 }}>Base de Datos en Firebase</p>
       </header>
 
       {/* Navegación de Vistas */}
@@ -138,7 +172,7 @@ function App() {
       </div>
 
       {cargando ? (
-        <div style={{ textAlign: 'center', color: '#1ed760', marginTop: '40px' }}>Cargando datos desde Supabase...</div>
+        <div style={{ textAlign: 'center', color: '#1ed760', marginTop: '40px' }}>Cargando datos desde Firebase...</div>
       ) : vista === 'tabla' ? (
         <>
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '20px' }}>
@@ -241,18 +275,18 @@ function App() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {historial.map(item => (
-                <div key={item.id} style={{ backgroundColor: '#181818', padding: '15px', borderRadius: '10px', borderLeft: item.monto >= 0 ? '4px solid #1ed760' : '4px solid #e74c3c', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={item.id} style={{ backgroundColor: '#181818', padding: '15px', borderRadius: '10px', borderLeft: (item.monto || 0) >= 0 ? '4px solid #1ed760' : '4px solid #e74c3c', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ color: '#ffffff', fontSize: '1.1rem' }}>{item.persona}</strong>
                     <div style={{ color: '#b3b3b3', fontSize: '0.85rem', marginTop: '4px' }}>
                       Fecha: {item.fecha} | Año: {item.anio}
                     </div>
-                    <div style={{ color: item.monto >= 0 ? '#1ed760' : '#e74c3c', fontSize: '0.9rem', marginTop: '4px' }}>
-                      Meses: {item.meses.join(', ')}
+                    <div style={{ color: (item.monto || 0) >= 0 ? '#1ed760' : '#e74c3c', fontSize: '0.9rem', marginTop: '4px' }}>
+                      Meses: {Array.isArray(item.meses) ? item.meses.join(', ') : item.meses}
                     </div>
                   </div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: item.monto >= 0 ? '#1ed760' : '#e74c3c' }}>
-                    {item.monto >= 0 ? `+${item.monto.toFixed(2).replace('.', ',')} €` : `${item.monto.toFixed(2).replace('.', ',')} €`}
+                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: (item.monto || 0) >= 0 ? '#1ed760' : '#e74c3c' }}>
+                    {(item.monto || 0) >= 0 ? `+${Number(item.monto || 0).toFixed(2).replace('.', ',')} €` : `${Number(item.monto || 0).toFixed(2).replace('.', ',')} €`}
                   </div>
                 </div>
               ))}
